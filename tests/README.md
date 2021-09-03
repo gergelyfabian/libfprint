@@ -15,6 +15,8 @@ script, capture it and store the capture to `custom.pcapng`.
 -----------------------
 A new 'capture' test is created by means of `capture.py` script:
 
+### FIXME Replace all this with create-driver-test.py call
+
 1. Create (if needed) a directory for the driver under `tests`
    directory:
 

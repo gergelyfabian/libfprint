@@ -1,0 +1,91 @@
+#!/usr/bin/python3
+
+BUILDDIR='@BUILDDIR@'
+SRCDIR='@SRCDIR@'
+
+import os
+import sys
+library_path = BUILDDIR + '/libfprint/'
+
+# Relaunch ourselves with a changed environment so
+# that we're loading the development version of libfprint
+if 'LD_LIBRARY_PATH' not in os.environ or not library_path in os.environ['LD_LIBRARY_PATH']:
+    os.environ['LD_LIBRARY_PATH'] = library_path
+    os.environ['GI_TYPELIB_PATH'] = '/home/hadess/.cache/jhbuild/build/libfprint/libfprint/'
+    os.environ['FP_DEVICE_EMULATION'] = '1'
+    try:
+        os.execv(sys.argv[0], sys.argv)
+    except Exception as e:
+        print('Could not run script with new library path')
+        sys.exit(1)
+
+import gi
+gi.require_version('FPrint', '2.0')
+from gi.repository import FPrint, GLib
+
+gi.require_version('GUsb', '1.0')
+from gi.repository import GUsb
+
+import subprocess
+
+if len(sys.argv) != 2:
+    print(f'Usage: {sys.argv[0]} test-name')
+    sys.exit(1)
+
+test_name = sys.argv[1]
+
+# Check that running as root
+
+if os.geteuid() != 0:
+    print(f'{sys.argv[0]} is expected to be run as root')
+    sys.exit(1)
+
+# Check that tshark is available
+
+# FIXME
+
+# Find the fingerprint reader
+ctx = FPrint.Context()
+ctx.enumerate()
+devices = ctx.get_devices()
+if len(devices) == 0:
+    print('Could not find a supported fingerprint reader')
+    sys.exit(1)
+elif len(devices) > 1:
+    print('Capture requires a single fingerprint reader to be plugged in')
+    sys.exit(1)
+
+usb_device = devices[0].get_property('fpi-usb-device')
+bus_num = usb_device.get_bus()
+device_num = usb_device.get_address()
+
+print(f'Capturing /dev/bus/usb/{bus_num:03d}/{device_num:03d}')
+
+# Make directory
+
+test_dir = SRCDIR + '/tests/' + test_name
+os.makedirs(test_dir, mode=0o775, exist_ok=True)
+
+# Capture device info
+
+args = ['umockdev-record', f'/dev/bus/usb/{bus_num:03d}/{device_num:03d}']
+process = subprocess.Popen(args, stdout=subprocess.PIPE)
+out, err = process.communicate()
+with open(test_dir + '/device', 'w') as device_file:
+    device_file.write(str(out))
+
+# Run capture
+
+args = ['tshark', '-i', f'usbmon{bus_num}', '-w', test_dir + '/capture-unfiltered.pcapng']
+traffic_cap = subprocess.Popen(args)
+
+with subprocess.Popen(['python3', SRCDIR + '/tests/capture.py', test_dir + '/capture.png']) as capture_process:
+    capture_process.wait()
+
+traffic_cap.kill()
+
+# Filter the capture
+args = ['tshark', '-r', test_dir + '/capture-unfiltered.pcapng', '-Y', f'usb.bus_id == {bus_num} and usb.device_address == {device_num}',
+        '-w', test_dir + '/capture.pcapng']
+with subprocess.Popen(args) as filter_process:
+    filter_process.wait()
