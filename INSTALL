@@ -4,3 +4,14 @@ compile libfprint.
 
 The "meson configure" command will give you a list of available
 command-line options.
+
+
+------
+
+Install dependencies for Ubuntu:
+
+sudo pip3 install ninja meson
+sudo apt install cmake build-essential libglib2.0-dev libgusb-dev \
+  libcairo2-dev libgirepository1.0-dev libnss3-dev libgudev-1.0-dev \
+  gtk-doc-tools valgrind
+
